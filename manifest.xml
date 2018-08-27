@@ -1,0 +1,20 @@
+<package>
+  <description brief="Simultaneous Localization and Mapping for the WasteShark">
+  SLAM library using GSTAM smoothing library for efficient localization and mapping
+  </description>
+  <author>Javier Hidalgo-Carrió/javier.hidalgo_carrio@dfki.de</author>
+  <license></license>
+  <url>http://base/cmake,base/types,slam/gtsam</url>
+  <logo>http://</logo>
+  <depend package="base/cmake" />
+  <!--
+   To add any dependencies use the depend tag
+  <depend package="dummy-dependency-0" />
+	...
+  <depend package="dummy-dependency-n-1" />
+  <depend package="dummy-dependency-n" />
+  -->
+  <depend package="base/cmake" />
+  <depend package="base/types" />
+  <depend package="slam/gtsam" />
+</package>
