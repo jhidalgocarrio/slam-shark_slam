@@ -1,0 +1,21 @@
+<package format="2">
+    <name>shark_slam</name>
+    <version>0.0.1</version>
+    <description>SLAM library using GSTAM smoothing library for efficient localization and mapping</description>
+    <maintainer email="javier.hidalgo_carrio@dfki.de"> Javier Hidalgo-Carrió</maintainer>
+    <license>BSD</license>
+
+    <buildtool_depend>cmake</buildtool_depend>
+
+    <build_depend>rock-cmake</build_depend>
+
+    <depend>rock-types</depend>
+    <depend>gtsam</depend>
+
+    <doc_depend>doxygen</doc_depend>
+
+    <export>
+        <build_type>cmake</build_type>
+    </export>
+
+</package>
