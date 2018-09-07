@@ -11,6 +11,7 @@
 
     <depend>rock-types</depend>
     <depend>gtsam</depend>
+    <depend>boost</depend>
 
     <doc_depend>doxygen</doc_depend>
 
