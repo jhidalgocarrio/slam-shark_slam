@@ -8,8 +8,10 @@
     <buildtool_depend>cmake</buildtool_depend>
 
     <build_depend>rock-cmake</build_depend>
+    <build_depend>pkg-config</build_depend>
 
     <depend>rock-types</depend>
+    <depend>rock-logging</depend>
     <depend>gtsam</depend>
     <depend>boost</depend>
 
