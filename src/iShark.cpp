@@ -325,3 +325,9 @@ void iShark::orientation_samplesCallback(const base::Time &ts, const ::base::sam
 }
 
 
+const base::samples::RigidBodyState& iShark::getPose()
+{
+    return this->output_pose;
+}
+
+

@@ -116,6 +116,8 @@ namespace shark_slam
         void imu_samplesCallback(const base::Time &ts, const ::base::samples::IMUSensors &imu_samples_sample);
 
         void orientation_samplesCallback(const base::Time &ts, const ::base::samples::RigidBodyState &orientation_samples_sample);
+
+        const base::samples::RigidBodyState& getPose();
     };
 
 } // end namespace shark_slam
