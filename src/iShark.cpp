@@ -8,6 +8,8 @@
 #define R2D 180.00/M_PI /** Convert radian to degree **/
 #endif
 
+#define DEBUG_PRINTS 1
+
 using namespace shark_slam;
 
 using gtsam::symbol_shorthand::X; // Pose3 (x,y,z,r,p,y)
@@ -46,7 +48,9 @@ iShark::iShark()
     this->output_pose.sourceFrame = body_frame;
     this->output_pose.targetFrame = navigation_frame;
 
+    #ifdef DEBUG_PRINTS
     std::cout<<"WELCOME!!\n";
+    #endif
 }
 
 iShark::~iShark()
@@ -131,13 +135,17 @@ void iShark::initialization(Eigen::Affine3d &tf)
     p->biasAccCovariance = bias_acc_cov; // acc bias in continuous
     p->biasOmegaCovariance = bias_omega_cov; // gyro bias in continuous
     p->biasAccOmegaInt = bias_acc_omega_int;
-
     this->imu_preintegrated.reset(new gtsam::PreintegratedImuMeasurements(p, prior_imu_bias));
 
     /** Store previous state for the imu integration and the latest predicted outcome. **/
     this->prev_state = gtsam::NavState(prior_pose, prior_velocity);
     this->prop_state = this->prev_state;
     this->prev_bias = prior_imu_bias;
+
+    /** Set initial time to zero for input port variables**/
+    this->gps_pose_samples.time = base::Time::fromSeconds(0);
+    this->imu_samples.time = base::Time::fromSeconds(0);
+    this->orientation_samples.time = base::Time::fromSeconds(0);
 
     return;
 }
@@ -243,7 +251,6 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
                                X(this->idx), V(this->idx),
                                B(this->idx-1),
                                *preint_imu);
-
         gtsam::imuBias::ConstantBias zero_bias(gtsam::Vector3(0, 0, 0), gtsam::Vector3(0, 0, 0));
         this->factor_graph->emplace_shared<gtsam::BetweenFactor<gtsam::imuBias::ConstantBias> >(B(this->idx-1),
                                                                                 B(this->idx),
@@ -252,7 +259,8 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
         /** Add GPS factor **/
         gtsam::noiseModel::Diagonal::shared_ptr correction_noise = gtsam::noiseModel::Isotropic::Sigma(3,1.0);
         //gtsam::GPSFactor gps_factor(X(this->idx),gtsam::Point3(Eigen::Vector3d::Zero()), correction_noise);
-        this->factor_graph->emplace_shared<gtsam::GPSFactor> (X(this->idx),gtsam::Point3(this->gps_pose_samples.position), correction_noise);
+        //this->factor_graph->emplace_shared<gtsam::GPSFactor> (X(this->idx),gtsam::Point3(this->gps_pose_samples.position), correction_noise);
+        this->factor_graph->emplace_shared<gtsam::GPSFactor> (X(this->idx),gtsam::Point3(Eigen::Vector3d::Zero()), correction_noise);
 
         /***********
         * Optimize *
@@ -274,28 +282,35 @@ void iShark::imu_samplesCallback(const base::Time &ts, const ::base::samples::IM
     std::cout<<"[SHARK_SLAM IMU_SAMPLES] Received time-stamp: "<<imu_samples_sample.time.toMicroseconds()<<std::endl;
     #endif
 
+    /** Check if this is the first sample **/
+    if (this->imu_samples.time.toSeconds() == 0)
+    {
+        this->imu_samples.time = imu_samples_sample.time;
+    }
+
+    /** get the delta time from the timestamps **/
+    double imu_samples_period = (imu_samples_sample.time-this->imu_samples.time).toSeconds();
+    std::cout<<"[SHARK_SLAM IMU_SAMPLES] delta_time "<< imu_samples_period <<"\n";
+
+    /** Get the transformer **/
+    Eigen::Affine3d tf_body_imu; /** Transformer transformation **/
+    Eigen::Quaternion <double> qtf; /** Rotation part of the transformation in quaternion form **/
+    tf_body_imu.setIdentity();
+
+    qtf = Eigen::Quaternion <double> (tf_body_imu.rotation());//!Quaternion from Body to imu (transforming samples from imu to body)
+
+    std::cout<<"acc(imu):\n"<<imu_samples_sample.acc<<"\n";
+
+    /** Store the imu samples in body frame **/
+    this->imu_samples.time = imu_samples_sample.time;
+    this->imu_samples.acc = qtf * imu_samples_sample.acc;
+    this->imu_samples.gyro = qtf * imu_samples_sample.gyro;
+    this->imu_samples.mag = qtf * imu_samples_sample.mag;
+    std::cout<<"acc(body):\n"<<this->imu_samples.acc<<"\n";
+    std::cout<<"gyro(body):\n"<<this->imu_samples.gyro<<"\n";
+
     if (this->initialize)
     {
-        /** get the delta time from the timestemaps **/
-        double imu_samples_period = (imu_samples_sample.time-this->imu_samples.time).toSeconds();
-
-        /** Get the transformer **/
-        Eigen::Affine3d tf_body_imu; /** Transformer transformation **/
-        Eigen::Quaternion <double> qtf; /** Rotation part of the transformation in quaternion form **/
-        tf_body_imu.setIdentity();
-
-        qtf = Eigen::Quaternion <double> (tf_body_imu.rotation());//!Quaternion from Body to imu (transforming samples from imu to body)
-
-        std::cout<<"acc(imu):\n"<<imu_samples_sample.acc<<"\n";
-
-        /** Store the imu samples in body frame **/
-        this->imu_samples.time = imu_samples_sample.time;
-        this->imu_samples.acc = qtf * imu_samples_sample.acc;
-        this->imu_samples.gyro = qtf * imu_samples_sample.gyro;
-        this->imu_samples.mag = qtf * imu_samples_sample.mag;
-        std::cout<<"acc(body):\n"<<this->imu_samples.acc<<"\n";
-        std::cout<<"gyro(body):\n"<<this->imu_samples.gyro<<"\n";
-
         /** Integrate the IMU samples in the preintegration **/
         this->imu_preintegrated->integrateMeasurement(this->imu_samples.acc, this->imu_samples.gyro, imu_samples_period);
 
