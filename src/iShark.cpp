@@ -25,6 +25,7 @@ iShark::iShark()
     this->initialize = false; //No initialization
     this->needs_optimization = false; //No optimize until we receive an IMU measurement
     this->orientation_available = false; //No orientation until we receive a orientation measurement
+    this->idx = 0;
 
     /***************************/
     /**    IMU Noise Init     **/
@@ -43,6 +44,11 @@ iShark::iShark()
     this->bias_acc_cov = gtsam::Matrix33::Identity(3,3) * pow(accel_bias_rw_sigma,2);
     this->bias_omega_cov = gtsam::Matrix33::Identity(3,3) * pow(gyro_bias_rw_sigma,2);
     this->bias_acc_omega_int = gtsam::Matrix::Identity(6,6) * 1e-5; // error in the bias used for preintegration
+
+    /** Set initial time to zero for input port variables**/
+    this->gps_pose_samples.time = base::Time::fromSeconds(0);
+    this->imu_samples.time = base::Time::fromSeconds(0);
+    this->orientation_samples.time = base::Time::fromSeconds(0);
 
     /** Initialize output port **/
     this->output_pose.sourceFrame = body_frame;
@@ -142,10 +148,6 @@ void iShark::initialization(Eigen::Affine3d &tf)
     this->prop_state = this->prev_state;
     this->prev_bias = prior_imu_bias;
 
-    /** Set initial time to zero for input port variables**/
-    this->gps_pose_samples.time = base::Time::fromSeconds(0);
-    this->imu_samples.time = base::Time::fromSeconds(0);
-    this->orientation_samples.time = base::Time::fromSeconds(0);
 
     return;
 }
