@@ -56,7 +56,6 @@ namespace shark_slam
         /**************************/
         /*** Property Variables ***/
         /**************************/
-        std::string body_frame, navigation_frame;
 
         /** IMU covariance matrices **/
         gtsam::Matrix33 measured_acc_cov;

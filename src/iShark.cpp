@@ -50,12 +50,9 @@ iShark::iShark()
     this->imu_samples.time = base::Time::fromSeconds(0);
     this->orientation_samples.time = base::Time::fromSeconds(0);
 
-    /** Initialize output port **/
-    this->output_pose.sourceFrame = body_frame;
-    this->output_pose.targetFrame = navigation_frame;
 
     #ifdef DEBUG_PRINTS
-    std::cout<<"WELCOME!!\n";
+    std::cout<<"** iSHARK WELCOME!! **\n";
     #endif
 }
 
@@ -203,14 +200,6 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
 
     if (!this->initialize && this->orientation_available)
     {
-        /** Get the transformer **/
-        Eigen::Affine3d tf_world_nav; /** Transformer transformation **/
-        tf_world_nav.setIdentity();
-
-        /** Get the transformer **/
-        Eigen::Affine3d tf_body_gps; /** Transformer transformation **/
-        tf_body_gps.setIdentity();
-
         /***********************
         * SLAM INITIALIZATION  *
         ***********************/
@@ -218,8 +207,11 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
         std::cout<<"[SHARK_SLAM GPS_POSE_SAMPLES] - Initializing..."<<std::endl;
         #endif
 
-        /** tf_world_gps **/
-        this->tf_init = Eigen::Affine3d(tf_world_nav * tf_body_gps);
+        /** Initial orientation from IMU **/
+        this->tf_init = this->orientation_samples.getTransform();
+
+        /** Initial position from GPS**/
+        this->tf_init.translation() = gps_pose_samples_sample.getTransform().translation();
 
         /** Initialization **/
         this->initialization(tf_init);
@@ -230,18 +222,19 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
         /** Store the inverse of the initial transformation tf_gps_world **/
         this->tf_init_inverse = this->tf_init.inverse();
 
+        /** Initialize output port **/
+        this->output_pose.sourceFrame = gps_pose_samples_sample.sourceFrame;
+        this->output_pose.targetFrame = gps_pose_samples_sample.targetFrame;
+
         #ifdef DEBUG_PRINTS
         std::cout<<"[DONE]"<<std::endl;
         #endif
     }
     else if (this->initialize && this->needs_optimization)
     {
-        /** Store the gps samples in body frame **/
-        this->gps_pose_samples.time = gps_pose_samples_sample.time;
-        this->gps_pose_samples.setTransform(this->tf_init_inverse * gps_pose_samples_sample.getTransform());
-        this->gps_pose_samples.velocity = this->tf_init_inverse.rotation() * gps_pose_samples_sample.velocity;
-        std::cout<<"position(world):\n"<<gps_pose_samples_sample.position<<"\n";
-        std::cout<<"position(nav):\n"<<this->gps_pose_samples.position<<"\n";
+        /** Store the gps samples **/
+        this->gps_pose_samples = gps_pose_samples_sample;
+        std::cout<<"position:\n"<<this->gps_pose_samples.position<<"\n";
 
         /** New GPS sample: increase index **/
         this->idx++;
@@ -259,10 +252,9 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
                                                                                 zero_bias, this->bias_noise_model);
 
         /** Add GPS factor **/
-        gtsam::noiseModel::Diagonal::shared_ptr correction_noise = gtsam::noiseModel::Isotropic::Sigma(3,1.0);
+        gtsam::noiseModel::Diagonal::shared_ptr correction_noise = gtsam::noiseModel::Isotropic::Sigma(3,5.0);
         //gtsam::GPSFactor gps_factor(X(this->idx),gtsam::Point3(Eigen::Vector3d::Zero()), correction_noise);
-        //this->factor_graph->emplace_shared<gtsam::GPSFactor> (X(this->idx),gtsam::Point3(this->gps_pose_samples.position), correction_noise);
-        this->factor_graph->emplace_shared<gtsam::GPSFactor> (X(this->idx),gtsam::Point3(Eigen::Vector3d::Zero()), correction_noise);
+        this->factor_graph->emplace_shared<gtsam::GPSFactor> (X(this->idx),gtsam::Point3(this->gps_pose_samples.position), correction_noise);
 
         /***********
         * Optimize *
