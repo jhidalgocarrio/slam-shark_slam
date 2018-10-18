@@ -78,6 +78,7 @@ namespace shark_slam
 
         gtsam::NavState prev_state, prop_state;
         gtsam::imuBias::ConstantBias prev_bias;
+        gtsam::Matrix66 prev_cov;
 
         /** GTSAM Factor graph **/
         std::shared_ptr< gtsam::NonlinearFactorGraph > factor_graph;
