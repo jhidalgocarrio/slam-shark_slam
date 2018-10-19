@@ -78,7 +78,8 @@ namespace shark_slam
 
         gtsam::NavState prev_state, prop_state;
         gtsam::imuBias::ConstantBias prev_bias;
-        gtsam::Matrix66 prev_cov;
+        std::pair<gtsam::Matrix66, gtsam::Matrix66> prev_cov;
+        Eigen::Matrix <double,3,1> angular_velocity_from_orient;
 
         /** GTSAM Factor graph **/
         std::shared_ptr< gtsam::NonlinearFactorGraph > factor_graph;
@@ -118,6 +119,8 @@ namespace shark_slam
         void orientation_samplesCallback(const base::Time &ts, const ::base::samples::RigidBodyState &orientation_samples_sample);
 
         const base::samples::RigidBodyState& getPose();
+
+        void updatePose(const base::Time &time, gtsam::NavState &state, const gtsam::Matrix66 &cov_pose, const gtsam::Matrix66 &cov_velo);
     };
 
 } // end namespace shark_slam
