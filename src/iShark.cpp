@@ -262,6 +262,11 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
                                     correction_noise);
         this->factor_graph->add(gps_factor);
 
+        /** Add orientation (Rot3) factor **/
+        gtsam::noiseModel::Diagonal::shared_ptr attitude_noise = gtsam::noiseModel::Isotropic::Sigma(3, 0.01); //noise in radians
+        gtsam::Unit3 unit_vector (this->orientation_samples.orientation * gtsam::Point3(0, 0, 1));
+        gtsam::Rot3AttitudeFactor attitude_factor (X(this->idx), unit_vector, attitude_noise);
+        this->factor_graph->add(attitude_factor);
 
         /***********
         * Optimize *
