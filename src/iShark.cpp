@@ -154,8 +154,7 @@ void iShark::initialization(Eigen::Affine3d &tf)
 
 void iShark::optimize()
 {
-    /** Propagate the state and store in the values **/
-    this->prop_state = this->imu_preintegrated->predict(prev_state, prev_bias);//TODO perhaps move to imu method
+    /** Store the state in the values **/
     this->initial_values->insert(X(this->idx), this->prop_state.pose());
     this->initial_values->insert(V(this->idx), this->prop_state.v());
     this->initial_values->insert(B(this->idx), this->prev_bias);
@@ -257,21 +256,21 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
         this->factor_graph->add(imu_factor);
 
         /** Add GPS factor **/
-        gtsam::noiseModel::Diagonal::shared_ptr correction_noise = gtsam::noiseModel::Isotropic::Sigma(3,0.1);
+        gtsam::noiseModel::Diagonal::shared_ptr correction_noise = gtsam::noiseModel::Isotropic::Sigma(3,0.1); //noise in meters
         gtsam::GPSFactor gps_factor (X(this->idx),
                                     gtsam::Point3(this->gps_pose_samples.position),
                                     correction_noise);
         this->factor_graph->add(gps_factor);
 
+
         /***********
         * Optimize *
         ************/
         this->optimize();
+
+        /** Update output pose**/
+        this->updatePose(this->gps_pose_samples.time, this->prev_state, this->prev_cov.first, this->prev_cov.second);
     }
-
-    /** Update Output pose**/
-    this->updatePose(this->gps_pose_samples.time, this->prev_state, this->prev_cov.first, this->prev_cov.second);
-
 }
 
 void iShark::imu_samplesCallback(const base::Time &ts, const ::base::samples::IMUSensors &imu_samples_sample)
@@ -308,6 +307,12 @@ void iShark::imu_samplesCallback(const base::Time &ts, const ::base::samples::IM
 
         /** It can optimize after integrating an IMU measurement **/
         this->needs_optimization = true;
+
+        /** Propagate the state in the values **/
+        this->prop_state = this->imu_preintegrated->predict(this->prev_state, this->prev_bias);
+
+        /** Update output pose**/
+        this->updatePose(this->imu_samples.time, this->prop_state, this->prev_cov.first, this->prev_cov.second);
     }
 }
 
