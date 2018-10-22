@@ -149,8 +149,6 @@ void iShark::initialization(Eigen::Affine3d &tf)
     this->prev_cov.first.setZero();
     this->prev_cov.second.setZero();
 
-    this->delta_orientation.setIdentity();
-
     return;
 }
 
@@ -194,8 +192,6 @@ void iShark::optimize()
 
     /** Reset the preintegration object. **/
     this->imu_preintegrated->resetIntegrationAndSetBias(prev_bias);
-
-    this->delta_orientation.setIdentity();
 
     /** Mark as optimized **/
     this->needs_optimization = false;
@@ -243,6 +239,9 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
     }
     else if (this->initialize && this->needs_optimization)
     {
+        /** Store the gps samples **/
+        this->gps_pose_samples = gps_pose_samples_sample;
+        //std::cout<<"position:\n"<<this->gps_pose_samples.position<<"\n";
 
         /** New GPS sample: increase index **/
         this->idx++;
@@ -257,16 +256,11 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
         this->factor_graph->add(imu_factor);
 
         /** Add GPS factor **/
-        gtsam::noiseModel::Diagonal::shared_ptr correction_noise = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, 1.0, 1.0, 1.0).finished()); // rad,rad,rad,m, m, m
-        gtsam::BetweenFactor<gtsam::Pose3> correction_factor (X(this->idx-1), X(this->idx),
-                                    gtsam::Pose3(gtsam::Rot3(this->delta_orientation),
-                                    gtsam::Point3(gps_pose_samples_sample.position)),
-                                    correction_noise);
-        this->factor_graph->add(correction_factor);
-
-        /** Store the gps samples **/
-        this->gps_pose_samples = gps_pose_samples_sample;
-        //std::cout<<"position:\n"<<this->gps_pose_samples.position<<"\n";
+        gtsam::noiseModel::Diagonal::shared_ptr gps_noise = gtsam::noiseModel::Isotropic::Sigma(3,0.1); //noise in meters
+        gtsam::GPSFactor gps_factor (X(this->idx),
+                                    gtsam::Point3(this->gps_pose_samples.position),
+                                    gps_noise);
+        this->factor_graph->add(gps_factor);
 
         /***********
         * Optimize *
@@ -311,9 +305,6 @@ void iShark::imu_samplesCallback(const base::Time &ts, const ::base::samples::IM
 
         /** Propagate the state in the values **/
         this->prop_state = this->imu_preintegrated->predict(this->prev_state, this->prev_bias);
-
-        /** Update output pose**/
-        this->updatePose(this->imu_samples.time, this->prop_state, this->prev_cov.first, this->prev_cov.second);
     }
 }
 
@@ -331,11 +322,17 @@ void iShark::orientation_samplesCallback(const base::Time &ts, const ::base::sam
     }
     else
     {
-        /** Accumulate delta orientation in quaternion **/
-        this->delta_orientation = this->orientation_samples.orientation.inverse() * orientation_samples_sample.orientation;
-
         /** Store the sample for the next iteration **/
         this->orientation_samples = orientation_samples_sample;
+
+        /** Update the propagated state with the orientation **/
+        this->prop_state = gtsam::NavState(gtsam::Rot3(this->orientation_samples.orientation),
+                                            this->prop_state.position(),
+                                            this->prop_state.velocity());
+
+        /** Update output pose**/
+        this->updatePose(this->orientation_samples.time, this->prop_state, this->prev_cov.first, this->prev_cov.second);
+
     }
 }
 

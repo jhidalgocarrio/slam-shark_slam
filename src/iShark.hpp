@@ -79,7 +79,6 @@ namespace shark_slam
         gtsam::NavState prev_state, prop_state;
         gtsam::imuBias::ConstantBias prev_bias;
         std::pair<gtsam::Matrix66, gtsam::Matrix66> prev_cov;
-        Eigen::Quaterniond delta_orientation;
 
         /** GTSAM Factor graph **/
         std::shared_ptr< gtsam::NonlinearFactorGraph > factor_graph;
