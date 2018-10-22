@@ -5,7 +5,6 @@
 #include <gtsam/navigation/CombinedImuFactor.h>
 #include <gtsam/navigation/GPSFactor.h>
 #include <gtsam/navigation/ImuFactor.h>
-#include <gtsam/navigation/AttitudeFactor.h>
 #include <gtsam/slam/BetweenFactor.h>
 #include <gtsam/slam/PriorFactor.h>
 
@@ -80,7 +79,7 @@ namespace shark_slam
         gtsam::NavState prev_state, prop_state;
         gtsam::imuBias::ConstantBias prev_bias;
         std::pair<gtsam::Matrix66, gtsam::Matrix66> prev_cov;
-        Eigen::Matrix <double,3,1> angular_velocity_from_orient;
+        Eigen::Quaterniond delta_orientation;
 
         /** GTSAM Factor graph **/
         std::shared_ptr< gtsam::NonlinearFactorGraph > factor_graph;

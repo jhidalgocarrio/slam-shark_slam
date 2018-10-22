@@ -149,6 +149,8 @@ void iShark::initialization(Eigen::Affine3d &tf)
     this->prev_cov.first.setZero();
     this->prev_cov.second.setZero();
 
+    this->delta_orientation.setIdentity();
+
     return;
 }
 
@@ -192,6 +194,8 @@ void iShark::optimize()
 
     /** Reset the preintegration object. **/
     this->imu_preintegrated->resetIntegrationAndSetBias(prev_bias);
+
+    this->delta_orientation.setIdentity();
 
     /** Mark as optimized **/
     this->needs_optimization = false;
@@ -239,9 +243,6 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
     }
     else if (this->initialize && this->needs_optimization)
     {
-        /** Store the gps samples **/
-        this->gps_pose_samples = gps_pose_samples_sample;
-        //std::cout<<"position:\n"<<this->gps_pose_samples.position<<"\n";
 
         /** New GPS sample: increase index **/
         this->idx++;
@@ -256,17 +257,16 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
         this->factor_graph->add(imu_factor);
 
         /** Add GPS factor **/
-        gtsam::noiseModel::Diagonal::shared_ptr correction_noise = gtsam::noiseModel::Isotropic::Sigma(3,0.1); //noise in meters
-        gtsam::GPSFactor gps_factor (X(this->idx),
-                                    gtsam::Point3(this->gps_pose_samples.position),
+        gtsam::noiseModel::Diagonal::shared_ptr correction_noise = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, 1.0, 1.0, 1.0).finished()); // rad,rad,rad,m, m, m
+        gtsam::BetweenFactor<gtsam::Pose3> correction_factor (X(this->idx-1), X(this->idx),
+                                    gtsam::Pose3(gtsam::Rot3(this->delta_orientation),
+                                    gtsam::Point3(gps_pose_samples_sample.position)),
                                     correction_noise);
-        this->factor_graph->add(gps_factor);
+        this->factor_graph->add(correction_factor);
 
-        /** Add orientation (Rot3) factor **/
-        gtsam::noiseModel::Diagonal::shared_ptr attitude_noise = gtsam::noiseModel::Isotropic::Sigma(3, 0.01); //noise in radians
-        gtsam::Unit3 unit_vector (this->orientation_samples.orientation * gtsam::Point3(0, 0, 1));
-        gtsam::Rot3AttitudeFactor attitude_factor (X(this->idx), unit_vector, attitude_noise);
-        this->factor_graph->add(attitude_factor);
+        /** Store the gps samples **/
+        this->gps_pose_samples = gps_pose_samples_sample;
+        //std::cout<<"position:\n"<<this->gps_pose_samples.position<<"\n";
 
         /***********
         * Optimize *
@@ -299,11 +299,7 @@ void iShark::imu_samplesCallback(const base::Time &ts, const ::base::samples::IM
     /** Store the imu samples in body frame **/
     this->imu_samples = imu_samples_sample;
     //std::cout<<"gyros: "<<this->imu_samples.gyro[0]<<","<<this->imu_samples.gyro[1]<<","<<this->imu_samples.gyro[2]<<"\n";
-    //std::cout<<"delta_euler: "<<this->angular_velocity_from_orient[2]<<"," <<this->angular_velocity_from_orient[1]<<","<<this->angular_velocity_from_orient[0]<<"\n";
     //std::cout<<"acc:\n"<<this->imu_samples.acc<<"\n";
-    /*this->imu_samples.gyro[0] = this->angular_velocity_from_orient[2];
-    this->imu_samples.gyro[1] = this->angular_velocity_from_orient[1];
-    this->imu_samples.gyro[0] = this->angular_velocity_from_orient[0];*/
 
     if (this->initialize)
     {
@@ -335,15 +331,8 @@ void iShark::orientation_samplesCallback(const base::Time &ts, const ::base::sam
     }
     else
     {
-        /** Compute the delta quaternion **/
-        Eigen::Quaterniond delta_q = this->orientation_samples.orientation.inverse() * orientation_samples_sample.orientation;
-
-        /** Delta time in seconds **/
-        double orientation_samples_period = (orientation_samples_sample.time-this->orientation_samples.time).toSeconds();
-
-        /** Compute the angular velocity. base::getEuler convert quaternion in
-         * yaw, pitch roll, therefore yaw is in vector[0] and roll in vector[2] **/
-        this->angular_velocity_from_orient = ::base::getEuler(delta_q)/orientation_samples_period;
+        /** Accumulate delta orientation in quaternion **/
+        this->delta_orientation = this->orientation_samples.orientation.inverse() * orientation_samples_sample.orientation;
 
         /** Store the sample for the next iteration **/
         this->orientation_samples = orientation_samples_sample;
