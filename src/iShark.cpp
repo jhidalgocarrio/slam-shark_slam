@@ -27,29 +27,10 @@ iShark::iShark()
     this->orientation_available = false; //No orientation until we receive a orientation measurement
     this->idx = 0;
 
-    /***************************/
-    /**    IMU Noise Init     **/
-    /***************************/
-
-    /** TODO: change from config values **/
-    double accel_noise_sigma = 0.3924;
-    double gyro_noise_sigma = 0.205689024915;
-    double accel_bias_rw_sigma = 0.04905;
-    double gyro_bias_rw_sigma = 0.001454441043;
-
-    /** Covariance matrices **/
-    this->measured_acc_cov = gtsam::Matrix33::Identity(3,3) * pow(accel_noise_sigma,2);
-    this->measured_omega_cov = gtsam::Matrix33::Identity(3,3) * pow(gyro_noise_sigma,2);
-    this->integration_error_cov = gtsam::Matrix33::Identity(3,3) * 1e-8; // error committed in integrating position from velocities
-    this->bias_acc_cov = gtsam::Matrix33::Identity(3,3) * pow(accel_bias_rw_sigma,2);
-    this->bias_omega_cov = gtsam::Matrix33::Identity(3,3) * pow(gyro_bias_rw_sigma,2);
-    this->bias_acc_omega_int = gtsam::Matrix::Identity(6,6) * 1e-5; // error in the bias used for preintegration
-
     /** Set initial time to zero for input port variables**/
     this->gps_pose_samples.time = base::Time::fromSeconds(0);
     this->imu_samples.time = base::Time::fromSeconds(0);
     this->orientation_samples.time = base::Time::fromSeconds(0);
-
 
     #ifdef DEBUG_PRINTS
     std::cout<<"** iSHARK WELCOME!! **\n";
@@ -67,6 +48,28 @@ iShark::~iShark()
     /** Reset estimation **/
     this->idx = 0;
 
+}
+
+void iShark::configuration(double &accel_noise_sigma,  double &gyro_noise_sigma,
+                            double &accel_bias_rw_sigma, double &gyro_bias_rw_sigma,
+                            double &gps_noise_sigma)
+{
+
+    /***************************/
+    /**    IMU Noise Init     **/
+    /***************************/
+
+    /** Covariance matrices **/
+    this->measured_acc_cov = gtsam::Matrix33::Identity(3,3) * pow(accel_noise_sigma,2);
+    this->measured_omega_cov = gtsam::Matrix33::Identity(3,3) * pow(gyro_noise_sigma,2);
+    this->integration_error_cov = gtsam::Matrix33::Identity(3,3) * 1e-8; // error committed in integrating position from velocities
+    this->bias_acc_cov = gtsam::Matrix33::Identity(3,3) * pow(accel_bias_rw_sigma,2);
+    this->bias_omega_cov = gtsam::Matrix33::Identity(3,3) * pow(gyro_bias_rw_sigma,2);
+    this->bias_acc_omega_int = gtsam::Matrix::Identity(6,6) * 1e-5; // error in the bias used for preintegration
+
+    this->gps_noise_model = gtsam::noiseModel::Isotropic::Sigma(3, gps_noise_sigma); //noise in meters
+
+    return;
 }
 
 void iShark::initialization(Eigen::Affine3d &tf)
@@ -169,7 +172,9 @@ void iShark::optimize()
 
     /** Optimize **/
     //gtsam::LevenbergMarquardtOptimizer optimizer (*(this->factor_graph), *(this->initial_values));
+    #ifdef DEBUG_PRINTS
     std::cout<<"[SHARK_SLAM OPTIMIZE] INITIAL_VALUES WITH: "<< this->initial_values->size()<<std::endl;
+    #endif
 
     /** Store in the values **/
     //gtsam::Values result = optimizer.optimize();
@@ -256,10 +261,9 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
         this->factor_graph->add(imu_factor);
 
         /** Add GPS factor **/
-        gtsam::noiseModel::Diagonal::shared_ptr gps_noise = gtsam::noiseModel::Isotropic::Sigma(3,0.1); //noise in meters
         gtsam::GPSFactor gps_factor (X(this->idx),
                                     gtsam::Point3(this->gps_pose_samples.position),
-                                    gps_noise);
+                                    gps_noise_model);
         this->factor_graph->add(gps_factor);
 
         /***********

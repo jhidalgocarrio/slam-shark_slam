@@ -57,6 +57,11 @@ namespace shark_slam
         /*** Property Variables ***/
         /**************************/
 
+        /** Initial pose uncertainties **/
+        gtsam::noiseModel::Diagonal::shared_ptr pose_noise_model;
+        gtsam::noiseModel::Diagonal::shared_ptr velocity_noise_model;
+        gtsam::noiseModel::Diagonal::shared_ptr bias_noise_model;
+
         /** IMU covariance matrices **/
         gtsam::Matrix33 measured_acc_cov;
         gtsam::Matrix33 measured_omega_cov; 
@@ -65,10 +70,8 @@ namespace shark_slam
         gtsam::Matrix33 bias_omega_cov;
         gtsam::Matrix66 bias_acc_omega_int;
 
-        /** Initial pose uncertainties **/
-        gtsam::noiseModel::Diagonal::shared_ptr pose_noise_model;
-        gtsam::noiseModel::Diagonal::shared_ptr velocity_noise_model;
-        gtsam::noiseModel::Diagonal::shared_ptr bias_noise_model;
+        /** GPS Noise model **/
+        gtsam::noiseModel::Diagonal::shared_ptr gps_noise_model;
 
         /******************************************/
         /*** General Internal Storage Variables ***/
@@ -104,6 +107,11 @@ namespace shark_slam
 
         /** Default destructor **/
         ~iShark();
+
+        /** configuration of the SLAM **/
+        void configuration(double &accel_noise_sigma,  double &gyro_noise_sigma,
+                            double &accel_bias_rw_sigma, double &gyro_bias_rw_sigma,
+                            double &gps_noise_sigma);
 
         /** initialization of the SLAM **/
         void initialization(Eigen::Affine3d &tf);
