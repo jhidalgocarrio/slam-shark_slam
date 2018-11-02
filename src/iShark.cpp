@@ -8,7 +8,7 @@
 #define R2D 180.00/M_PI /** Convert radian to degree **/
 #endif
 
-//#define DEBUG_PRINTS 1
+#define DEBUG_PRINTS 1
 
 using namespace shark_slam;
 
@@ -23,7 +23,7 @@ iShark::iShark()
     /******************************/
 
     this->initialize = false; //No initialization
-    this->needs_optimization = false; //No optimize until we receive an IMU measurement
+    this->needs_optimization = false; //No optimize until we receive an IMU measurement in between two GPS measurements
     this->orientation_available = false; //No orientation until we receive a orientation measurement
     this->idx = 0;
 
@@ -62,7 +62,7 @@ void iShark::configuration(double &accel_noise_sigma,  double &gyro_noise_sigma,
     /** Covariance matrices **/
     this->measured_acc_cov = gtsam::Matrix33::Identity(3,3) * pow(accel_noise_sigma,2);
     this->measured_omega_cov = gtsam::Matrix33::Identity(3,3) * pow(gyro_noise_sigma,2);
-    this->integration_error_cov = gtsam::Matrix33::Identity(3,3) * 1e-8; // error committed in integrating position from velocities
+    this->integration_error_cov = gtsam::Matrix33::Identity(3,3) * 1e-6; // error committed in integrating position from velocities
     this->bias_acc_cov = gtsam::Matrix33::Identity(3,3) * pow(accel_bias_rw_sigma,2);
     this->bias_omega_cov = gtsam::Matrix33::Identity(3,3) * pow(gyro_bias_rw_sigma,2);
     this->bias_acc_omega_int = gtsam::Matrix::Identity(6,6) * 1e-5; // error in the bias used for preintegration
@@ -220,13 +220,17 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
         #endif
 
         /** Initial orientation from IMU **/
-        this->tf_init = this->orientation_samples.getTransform();
+        Eigen::Quaterniond attitude = Eigen::Quaternion <double>(
+                    Eigen::AngleAxisd(gps_pose_samples_sample.getYaw(), Eigen::Vector3d::UnitZ())*
+                    Eigen::AngleAxisd(this->orientation_samples.getPitch(), Eigen::Vector3d::UnitY()) *
+                    Eigen::AngleAxisd(this->orientation_samples.getRoll(), Eigen::Vector3d::UnitX()));
+        this->tf_init = attitude; //this->orientation_samples.getTransform();
 
         /** Initial position from GPS**/
         this->tf_init.translation() = gps_pose_samples_sample.getTransform().translation();
 
         /** Initialization **/
-        this->initialization(tf_init);
+        this->initialization(this->tf_init);
 
         /** Initialization succeeded **/
         this->initialize = true;
@@ -238,7 +242,13 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
         this->output_pose.sourceFrame = gps_pose_samples_sample.sourceFrame;
         this->output_pose.targetFrame = gps_pose_samples_sample.targetFrame;
 
+        /** Store the gps samples **/
+        this->gps_pose_samples = gps_pose_samples_sample;
+
         #ifdef DEBUG_PRINTS
+        std::cout<<"INITIAL POSITION: "<<this->tf_init.translation()[0]<<", "<<this->tf_init.translation()[1]<<", "<<this->tf_init.translation()[2]<<std::endl;
+        Eigen::Matrix <double,3,1> euler = base::getEuler(Eigen::Quaterniond(this->tf_init.rotation()));
+        std::cout<<"INITIAL ROLL: "<<euler[2] * R2D <<" PITCH: "<< euler[1] * R2D <<" YAW: "<<euler[0] * R2D<<std::endl;
         std::cout<<"[DONE]"<<std::endl;
         #endif
     }
@@ -307,7 +317,7 @@ void iShark::imu_samplesCallback(const base::Time &ts, const ::base::samples::IM
         /** It can optimize after integrating an IMU measurement **/
         this->needs_optimization = true;
 
-        /** Propagate the state in the values **/
+        /** Propagate the state in the integration of the imu values **/
         this->prop_state = this->imu_preintegrated->predict(this->prev_state, this->prev_bias);
     }
 }
@@ -324,13 +334,30 @@ void iShark::orientation_samplesCallback(const base::Time &ts, const ::base::sam
         this->orientation_samples = orientation_samples_sample;
         this->orientation_available = true;
     }
-    else
+    else if (this->initialize)
     {
         /** Store the sample for the next iteration **/
         this->orientation_samples = orientation_samples_sample;
 
+        #ifdef DEBUG_PRINTS
+        Eigen::Matrix <double,3,1> euler = base::getEuler(this->orientation_samples.orientation);
+        std::cout<<"ORIENT ROLL: "<<euler[2] * R2D <<" PITCH: "<< euler[1] * R2D <<" YAW: "<<euler[0] * R2D<<std::endl;
+        euler = base::getEuler(this->gps_pose_samples.orientation);
+        std::cout<<"GPS ROLL: "<<euler[2] * R2D <<" PITCH: "<< euler[1] * R2D <<" YAW: "<<euler[0] * R2D<<std::endl;
+        #endif
+
+        Eigen::Quaterniond attitude = Eigen::Quaternion <double>(
+                    Eigen::AngleAxisd(this->gps_pose_samples.getYaw(), Eigen::Vector3d::UnitZ())*
+                    Eigen::AngleAxisd(this->orientation_samples.getPitch(), Eigen::Vector3d::UnitY()) *
+                    Eigen::AngleAxisd(this->orientation_samples.getRoll(), Eigen::Vector3d::UnitX()));
+
+        #ifdef DEBUG_PRINTS
+        euler = base::getEuler(attitude);
+        std::cout<<"CORRECTION ROLL: "<<euler[2] * R2D <<" PITCH: "<< euler[1] * R2D <<" YAW: "<<euler[0] * R2D<<std::endl;
+        #endif
+
         /** Update the propagated state with the orientation **/
-        this->prop_state = gtsam::NavState(gtsam::Rot3(this->orientation_samples.orientation),
+        this->prop_state = gtsam::NavState(gtsam::Rot3(attitude),
                                             this->prop_state.position(),
                                             this->prop_state.velocity());
 
@@ -352,6 +379,8 @@ void iShark::updatePose(const base::Time &time, gtsam::NavState &state, const gt
     this->output_pose.position = state.pose().translation();
     Eigen::Quaterniond delta_q = this->output_pose.orientation.inverse() * state.pose().rotation().toQuaternion();
     this->output_pose.orientation = state.pose().rotation().toQuaternion();
+    Eigen::Matrix <double,3,1> euler = base::getEuler(state.pose().rotation().toQuaternion());
+    std::cout<<"OUTPUT ROLL: "<<euler[2] * R2D <<" PITCH: "<< euler[1] * R2D <<" YAW: "<<euler[0] * R2D<<std::endl;
     this->output_pose.velocity = state.velocity();
     this->output_pose.angular_velocity = ::base::getEuler(delta_q);
     this->output_pose.cov_position = cov_pose.block<3, 3>(0,0);
