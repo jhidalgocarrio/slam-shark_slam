@@ -127,21 +127,24 @@ void iShark::initialization(Eigen::Affine3d &tf)
     this->factor_graph->add(gtsam::PriorFactor<gtsam::imuBias::ConstantBias> (B(this->idx), prior_imu_bias, this->bias_noise_model));
 
     /** Initialize the measurement noise **/
-    boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params> p = gtsam::PreintegratedCombinedMeasurements::Params::MakeSharedD(0.0);
+    boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params> params = gtsam::PreintegratedCombinedMeasurements::Params::MakeSharedD(0.0);
 
     /** PreintegrationBase params: **/
-    p->accelerometerCovariance = measured_acc_cov; // acc white noise in continuous
-    p->integrationCovariance = integration_error_cov; // integration uncertainty continuous
+    params->accelerometerCovariance = measured_acc_cov; // acc white noise in continuous
+    params->integrationCovariance = integration_error_cov; // integration uncertainty continuous
 
     /** should be using 2nd order integration **/
-    p->gyroscopeCovariance = measured_omega_cov; // gyro white noise in continuous
+    params->gyroscopeCovariance = measured_omega_cov; // gyro white noise in continuous
 
     /** PreintegrationCombinedMeasurements params: **/
-    p->biasAccCovariance = bias_acc_cov; // acc bias in continuous
-    p->biasOmegaCovariance = bias_omega_cov; // gyro bias in continuous
-    p->biasAccOmegaInt = bias_acc_omega_int;
+    params->biasAccCovariance = bias_acc_cov; // acc bias in continuous
+    params->biasOmegaCovariance = bias_omega_cov; // gyro bias in continuous
+    params->biasAccOmegaInt = bias_acc_omega_int;
 
-    this->imu_preintegrated.reset(new gtsam::PreintegratedCombinedMeasurements(p, prior_imu_bias));
+    params->setUse2ndOrderCoriolis(false);
+    params->setOmegaCoriolis(gtsam::Vector3(0, 0, 0));
+
+    this->imu_preintegrated.reset(new gtsam::PreintegratedCombinedMeasurements(params, prior_imu_bias));
 
     /** Store previous state for the imu integration and the latest predicted outcome. **/
     this->prev_state = gtsam::NavState(prior_pose, prior_velocity);
@@ -157,6 +160,9 @@ void iShark::initialization(Eigen::Affine3d &tf)
 
 void iShark::optimize()
 {
+    /** Propagate the state in the integration of the imu values **/
+    this->prop_state = this->imu_preintegrated->predict(this->prev_state, this->prev_bias);
+
     /** Store the state in the values **/
     this->initial_values->insert(X(this->idx), this->prop_state.pose());
     this->initial_values->insert(V(this->idx), this->prop_state.v());
@@ -188,15 +194,15 @@ void iShark::optimize()
     this->prev_state = gtsam::NavState(result.at<gtsam::Pose3>(X(this->idx)),
                                        result.at<gtsam::Vector3>(V(this->idx)));
 
+    /** Get the imu bias estimation **/
+    this->prev_bias = result.at<gtsam::imuBias::ConstantBias>(B(this->idx));
+
     /** Get the marginals covariance, first for the pose and second for the twist **/
     this->prev_cov.first = this->isam->marginalCovariance(X(this->idx));
     this->prev_cov.second.block<3,3>(0,0) = this->isam->marginalCovariance(V(this->idx));
 
-    /** Get the imu bias estimation **/
-    this->prev_bias = result.at<gtsam::imuBias::ConstantBias>(B(this->idx));
-
     /** Reset the preintegration object. **/
-    this->imu_preintegrated->resetIntegrationAndSetBias(prev_bias);
+    this->imu_preintegrated->resetIntegrationAndSetBias(this->prev_bias);
 
     /** Mark as optimized **/
     this->needs_optimization = false;
@@ -220,6 +226,7 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
         #endif
 
         /** Initial orientation from IMU **/
+        std::cout<<"FIRST ROLL: "<<this->orientation_samples.getRoll() * R2D <<" PITCH: "<< this->orientation_samples.getPitch() * R2D <<" YAW: "<<this->orientation_samples.getYaw() * R2D<<std::endl;
         Eigen::Quaterniond attitude = Eigen::Quaternion <double>(
                     Eigen::AngleAxisd(gps_pose_samples_sample.getYaw(), Eigen::Vector3d::UnitZ())*
                     Eigen::AngleAxisd(this->orientation_samples.getPitch(), Eigen::Vector3d::UnitY()) *
@@ -239,6 +246,7 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
         this->tf_init_inverse = this->tf_init.inverse();
 
         /** Initialize output port **/
+        this->output_pose.setPose(this->tf_init);
         this->output_pose.sourceFrame = gps_pose_samples_sample.sourceFrame;
         this->output_pose.targetFrame = gps_pose_samples_sample.targetFrame;
 
@@ -281,8 +289,6 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
         ************/
         this->optimize();
 
-        /** Update output pose**/
-        this->updatePose(this->gps_pose_samples.time, this->prev_state, this->prev_cov.first, this->prev_cov.second);
     }
 }
 
@@ -316,9 +322,6 @@ void iShark::imu_samplesCallback(const base::Time &ts, const ::base::samples::IM
 
         /** It can optimize after integrating an IMU measurement **/
         this->needs_optimization = true;
-
-        /** Propagate the state in the integration of the imu values **/
-        this->prop_state = this->imu_preintegrated->predict(this->prev_state, this->prev_bias);
     }
 }
 
@@ -356,20 +359,25 @@ void iShark::orientation_samplesCallback(const base::Time &ts, const ::base::sam
         std::cout<<"CORRECTION ROLL: "<<euler[2] * R2D <<" PITCH: "<< euler[1] * R2D <<" YAW: "<<euler[0] * R2D<<std::endl;
         #endif
 
-        /** Update the propagated state with the orientation **/
-        this->prop_state = gtsam::NavState(gtsam::Rot3(attitude),
-                                            this->prop_state.position(),
-                                            this->prop_state.velocity());
-
-        /** Update output pose**/
-        this->updatePose(this->orientation_samples.time, this->prop_state, this->prev_cov.first, this->prev_cov.second);
-
+        /** Update the orientation of the propagated state, rest does not change**/
+        this->prev_state = gtsam::NavState(gtsam::Rot3(attitude),
+                                            this->prev_state.position(),
+                                            this->prev_state.velocity());
     }
 }
 
 
-const base::samples::RigidBodyState& iShark::getPose()
+const base::samples::RigidBodyState& iShark::getPose(const base::Time &ts)
 {
+    if (this->initialize)
+    {
+        /** Propagate the state in the integration of the imu values **/
+        gtsam::NavState state = this->imu_preintegrated->predict(this->prev_state, this->prev_bias);
+
+        /** Update output pose**/
+        this->updatePose(ts, state, this->prev_cov.first, this->prev_cov.second);
+    }
+
     return this->output_pose;
 }
 

@@ -125,7 +125,7 @@ namespace shark_slam
 
         void orientation_samplesCallback(const base::Time &ts, const ::base::samples::RigidBodyState &orientation_samples_sample);
 
-        const base::samples::RigidBodyState& getPose();
+        const base::samples::RigidBodyState& getPose(const base::Time &ts);
 
         void updatePose(const base::Time &time, gtsam::NavState &state, const gtsam::Matrix66 &cov_pose, const gtsam::Matrix66 &cov_velo);
     };
