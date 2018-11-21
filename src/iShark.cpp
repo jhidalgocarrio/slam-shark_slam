@@ -311,10 +311,8 @@ void iShark::imu_samplesCallback(const base::Time &ts, const ::base::samples::IM
     std::cout<<"[SHARK_SLAM IMU_SAMPLES] delta_time "<< imu_samples_period <<"\n";
     #endif
 
-    /** Store the imu samples in body frame **/
+    /** Store the imu samples **/
     this->imu_samples = imu_samples_sample;
-    //std::cout<<"gyros: "<<this->imu_samples.gyro[0]<<","<<this->imu_samples.gyro[1]<<","<<this->imu_samples.gyro[2]<<"\n";
-    //std::cout<<"acc:\n"<<this->imu_samples.acc<<"\n";
 
     if (this->initialize)
     {
