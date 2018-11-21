@@ -91,6 +91,7 @@ void iShark::initialization(Eigen::Affine3d &tf)
     and type of linear solver. For this example, we we set the relinearization threshold small so the iSAM2 result
     will approach the batch result. **/
     gtsam::ISAM2Params isam_parameters;
+    isam_parameters.setFactorization("CHOLESKY");
     isam_parameters.relinearizeThreshold = 0.1;
     isam_parameters.relinearizeSkip = 10;
     this->isam.reset(new gtsam::ISAM2(isam_parameters));
