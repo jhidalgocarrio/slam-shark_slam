@@ -67,7 +67,8 @@ void iShark::configuration(double &accel_noise_sigma,  double &gyro_noise_sigma,
     this->bias_omega_cov = gtsam::Matrix33::Identity(3,3) * pow(gyro_bias_rw_sigma,2);
     this->bias_acc_omega_int = gtsam::Matrix::Identity(6,6) * 1e-5; // error in the bias used for preintegration
 
-    this->gps_noise_model = gtsam::noiseModel::Isotropic::Sigma(3, gps_noise_sigma); //noise in meters
+    this->gps_noise_model = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << gtsam::Vector3::Constant(gps_noise_sigma),
+                                                                gtsam::Vector3::Constant(0.1)).finished()); //noise in meters and radians
 
     return;
 }
@@ -279,10 +280,28 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
                                     *preint_imu_combined);
         this->factor_graph->add(imu_factor);
 
+        #ifdef DEBUG_PRINTS
+        Eigen::Matrix <double,3,1> euler = base::getEuler(this->orientation_samples.orientation);
+        std::cout<<"ORIENT ROLL: "<<euler[2] * R2D <<" PITCH: "<< euler[1] * R2D <<" YAW: "<<euler[0] * R2D<<std::endl;
+        euler = base::getEuler(this->gps_pose_samples.orientation);
+        std::cout<<"GPS ROLL: "<<euler[2] * R2D <<" PITCH: "<< euler[1] * R2D <<" YAW: "<<euler[0] * R2D<<std::endl;
+        #endif
+
+        /** GPS pose for the factor **/
+        Eigen::Quaterniond attitude = Eigen::Quaternion <double>(
+                    Eigen::AngleAxisd(this->gps_pose_samples.getYaw(), Eigen::Vector3d::UnitZ())*
+                    Eigen::AngleAxisd(this->orientation_samples.getPitch(), Eigen::Vector3d::UnitY()) *
+                    Eigen::AngleAxisd(this->orientation_samples.getRoll(), Eigen::Vector3d::UnitX()));
+
+        gtsam::Pose3 gps_measurement = gtsam::Pose3(gtsam::Rot3(attitude), gtsam::Point3(this->gps_pose_samples.position));
+
+        #ifdef DEBUG_PRINTS
+        euler = base::getEuler(attitude);
+        std::cout<<"FACTOR ROLL: "<<euler[2] * R2D <<" PITCH: "<< euler[1] * R2D <<" YAW: "<<euler[0] * R2D<<std::endl;
+        #endif
+
         /** Add GPS factor **/
-        gtsam::GPSFactor gps_factor (X(this->idx),
-                                    gtsam::Point3(this->gps_pose_samples.position),
-                                    gps_noise_model);
+        gtsam::PriorFactor<gtsam::Pose3> gps_factor (X(this->idx), gps_measurement, this->gps_noise_model);
         this->factor_graph->add(gps_factor);
 
         /***********
@@ -333,38 +352,11 @@ void iShark::orientation_samplesCallback(const base::Time &ts, const ::base::sam
     if (!this->orientation_available)
     {
         /** Initial orientation  **/
-        this->orientation_samples = orientation_samples_sample;
         this->orientation_available = true;
     }
-    else if (this->initialize)
-    {
-        /** Store the sample for the next iteration **/
-        this->orientation_samples = orientation_samples_sample;
 
-        #ifdef DEBUG_PRINTS
-        Eigen::Matrix <double,3,1> euler = base::getEuler(this->orientation_samples.orientation);
-        std::cout<<"ORIENT ROLL: "<<euler[2] * R2D <<" PITCH: "<< euler[1] * R2D <<" YAW: "<<euler[0] * R2D<<std::endl;
-        euler = base::getEuler(this->gps_pose_samples.orientation);
-        std::cout<<"GPS ROLL: "<<euler[2] * R2D <<" PITCH: "<< euler[1] * R2D <<" YAW: "<<euler[0] * R2D<<std::endl;
-        #endif
-
-        Eigen::Quaterniond attitude = Eigen::Quaternion <double>(
-                    Eigen::AngleAxisd(this->gps_pose_samples.getYaw(), Eigen::Vector3d::UnitZ())*
-                    Eigen::AngleAxisd(this->orientation_samples.getPitch(), Eigen::Vector3d::UnitY()) *
-                    Eigen::AngleAxisd(this->orientation_samples.getRoll(), Eigen::Vector3d::UnitX()));
-
-        #ifdef DEBUG_PRINTS
-        euler = base::getEuler(attitude);
-        std::cout<<"CORRECTION ROLL: "<<euler[2] * R2D <<" PITCH: "<< euler[1] * R2D <<" YAW: "<<euler[0] * R2D<<std::endl;
-        #endif
-
-        /** Update the orientation of the propagated state, rest does not change**/
-        this->prev_state = gtsam::NavState(gtsam::Rot3(attitude),
-                                            this->prev_state.position(),
-                                            this->prev_state.velocity());
-    }
+    this->orientation_samples = orientation_samples_sample;
 }
-
 
 const base::samples::RigidBodyState& iShark::getPose(const base::Time &ts)
 {
