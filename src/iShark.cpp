@@ -52,7 +52,8 @@ iShark::~iShark()
 
 void iShark::configuration(double &accel_noise_sigma,  double &gyro_noise_sigma,
                             double &accel_bias_rw_sigma, double &gyro_bias_rw_sigma,
-                            double &gps_noise_sigma)
+                            double &gps_noise_sigma, std::string &source_frame,
+                            std::string &target_frame)
 {
 
     /***************************/
@@ -69,6 +70,10 @@ void iShark::configuration(double &accel_noise_sigma,  double &gyro_noise_sigma,
 
     this->gps_noise_model = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << gtsam::Vector3::Constant(gps_noise_sigma),
                                                                 gtsam::Vector3::Constant(0.1)).finished()); //noise in meters and radians
+
+    /** Frame names of the output pose **/
+    this->output_pose.sourceFrame = source_frame;
+    this->output_pose.targetFrame = target_frame;
 
     return;
 }
@@ -249,8 +254,6 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
 
         /** Initialize output port **/
         this->output_pose.setPose(this->tf_init);
-        this->output_pose.sourceFrame = gps_pose_samples_sample.sourceFrame;
-        this->output_pose.targetFrame = gps_pose_samples_sample.targetFrame;
 
         /** Store the gps samples **/
         this->gps_pose_samples = gps_pose_samples_sample;

@@ -111,7 +111,8 @@ namespace shark_slam
         /** configuration of the SLAM **/
         void configuration(double &accel_noise_sigma,  double &gyro_noise_sigma,
                             double &accel_bias_rw_sigma, double &gyro_bias_rw_sigma,
-                            double &gps_noise_sigma);
+                            double &gps_noise_sigma, std::string &source_frame,
+                            std::string &target_frame);
 
         /** initialization of the SLAM **/
         void initialization(Eigen::Affine3d &tf);
