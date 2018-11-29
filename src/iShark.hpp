@@ -43,6 +43,9 @@ namespace shark_slam
         /** Needs optimization **/
         bool needs_optimization;
 
+        /** True in case GPS gives heading information **/
+        bool use_gps_heading;
+
         /** Indices to identify estimates **/
         unsigned long int idx;
 
@@ -112,7 +115,7 @@ namespace shark_slam
         void configuration(double &accel_noise_sigma,  double &gyro_noise_sigma,
                             double &accel_bias_rw_sigma, double &gyro_bias_rw_sigma,
                             double &gps_noise_sigma, std::string &source_frame,
-                            std::string &target_frame);
+                            std::string &target_frame, bool &use_gps_heading);
 
         /** initialization of the SLAM **/
         void initialization(Eigen::Affine3d &tf);

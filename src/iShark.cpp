@@ -53,7 +53,7 @@ iShark::~iShark()
 void iShark::configuration(double &accel_noise_sigma,  double &gyro_noise_sigma,
                             double &accel_bias_rw_sigma, double &gyro_bias_rw_sigma,
                             double &gps_noise_sigma, std::string &source_frame,
-                            std::string &target_frame)
+                            std::string &target_frame, bool &use_gps_heading)
 {
 
     /***************************/
@@ -74,6 +74,9 @@ void iShark::configuration(double &accel_noise_sigma,  double &gyro_noise_sigma,
     /** Frame names of the output pose **/
     this->output_pose.sourceFrame = source_frame;
     this->output_pose.targetFrame = target_frame;
+
+    /** Set the use of GPS as source for heading corrections **/
+    this->use_gps_heading = use_gps_heading;
 
     return;
 }
@@ -230,14 +233,23 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
         ***********************/
         #ifdef DEBUG_PRINTS
         std::cout<<"[SHARK_SLAM GPS_POSE_SAMPLES] - Initializing..."<<std::endl;
+        std::cout<<"FIRST ROLL: "<<this->orientation_samples.getRoll() * R2D <<" PITCH: "<< this->orientation_samples.getPitch() * R2D <<" YAW: "<<this->orientation_samples.getYaw() * R2D<<std::endl;
         #endif
 
-        /** Initial orientation from IMU **/
-        std::cout<<"FIRST ROLL: "<<this->orientation_samples.getRoll() * R2D <<" PITCH: "<< this->orientation_samples.getPitch() * R2D <<" YAW: "<<this->orientation_samples.getYaw() * R2D<<std::endl;
-        Eigen::Quaterniond attitude = Eigen::Quaternion <double>(
+        /** Initial orientation **/
+        Eigen::Quaterniond attitude;
+        if (this->use_gps_heading)
+        {
+            attitude= Eigen::Quaternion <double>(
                     Eigen::AngleAxisd(gps_pose_samples_sample.getYaw(), Eigen::Vector3d::UnitZ())*
                     Eigen::AngleAxisd(this->orientation_samples.getPitch(), Eigen::Vector3d::UnitY()) *
                     Eigen::AngleAxisd(this->orientation_samples.getRoll(), Eigen::Vector3d::UnitX()));
+        }
+        else
+        {
+            attitude = this->orientation_samples.orientation;
+        }
+
         this->tf_init = attitude; //this->orientation_samples.getTransform();
 
         /** Initial position from GPS**/
@@ -290,12 +302,21 @@ void iShark::gps_pose_samplesCallback(const base::Time &ts, const ::base::sample
         std::cout<<"GPS ROLL: "<<euler[2] * R2D <<" PITCH: "<< euler[1] * R2D <<" YAW: "<<euler[0] * R2D<<std::endl;
         #endif
 
-        /** GPS pose for the factor **/
-        Eigen::Quaterniond attitude = Eigen::Quaternion <double>(
+        /** Orientation for the GPS factor **/
+        Eigen::Quaterniond attitude;
+        if (this->use_gps_heading)
+        {
+            attitude = Eigen::Quaternion <double>(
                     Eigen::AngleAxisd(this->gps_pose_samples.getYaw(), Eigen::Vector3d::UnitZ())*
                     Eigen::AngleAxisd(this->orientation_samples.getPitch(), Eigen::Vector3d::UnitY()) *
                     Eigen::AngleAxisd(this->orientation_samples.getRoll(), Eigen::Vector3d::UnitX()));
+        }
+        else
+        {
+            attitude = this->orientation_samples.orientation;
+        }
 
+        /** GPS pose for the factor **/
         gtsam::Pose3 gps_measurement = gtsam::Pose3(gtsam::Rot3(attitude), gtsam::Point3(this->gps_pose_samples.position));
 
         #ifdef DEBUG_PRINTS
